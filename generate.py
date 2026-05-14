@@ -210,6 +210,22 @@ def build_entry(groups: dict[str, list[str]], model: str, version: str, date: st
     return "\n".join(lines)
 
 
+def parse_changelog(path: str) -> tuple[set[str], datetime | None]:
+    """Returns (existing version labels, date of most recent entry)."""
+    versions: set[str] = set()
+    last_date: datetime | None = None
+    if not os.path.exists(path):
+        return versions, None
+    with open(path) as f:
+        for line in f:
+            match = re.search(r'^## \[(.*?)\] - (\d{4}-\d{2}-\d{2})', line)
+            if match:
+                versions.add(match.group(1))
+                if last_date is None:
+                    last_date = datetime.strptime(match.group(2), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    return versions, last_date
+
+
 def prepend_to_changelog(entries: list[str], path: str):
     existing = ""
     if os.path.exists(path):
@@ -274,13 +290,18 @@ def main():
     releases = fetch_all_releases(owner, repo, token)
 
     if not releases:
-        print("No releases found — generating changelog for all merged PRs...")
+        _, last_date = parse_changelog(args.output)
+        since = last_date or datetime(2000, 1, 1, tzinfo=timezone.utc)
+        if last_date:
+            print(f"No releases found — fetching changes since last entry ({last_date.strftime('%Y-%m-%d')})...")
+        else:
+            print("No releases found — generating changelog for all commits...")
         version = args.version or "Unreleased"
         date = datetime.now().strftime("%Y-%m-%d")
-        groups, source = fetch_and_group(owner, repo, datetime(2000, 1, 1, tzinfo=timezone.utc), None, token)
+        groups, source = fetch_and_group(owner, repo, since, None, token)
         total = sum(len(v) for v in groups.values())
         if not total:
-            print("Nothing to changelog.")
+            print("Nothing new to changelog.")
             return
         print(f"{total} entries from {source} to rewrite across {len(groups)} sections.")
         entry = build_entry(groups, args.model, version, date)
@@ -291,6 +312,7 @@ def main():
         return
 
     if args.backfill:
+        existing_versions, _ = parse_changelog(args.output)
         print(f"Backfilling {len(releases)} releases...")
         entries = []
         for i, release in enumerate(releases):
@@ -303,6 +325,9 @@ def main():
             )
             until_date = datetime.fromisoformat(release["published_at"].replace("Z", "+00:00"))
 
+            if version in existing_versions:
+                print(f"\n[{version}] already in changelog — skipping")
+                continue
             print(f"\n[{version}] {date}")
             groups, source = fetch_and_group(owner, repo, since_date, until_date, token)
             total = sum(len(v) for v in groups.values())
