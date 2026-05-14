@@ -346,7 +346,7 @@ def main():
             version = release["tag_name"]
             date = release["created_at"][:10]
             since_date = (
-                datetime.fromisoformat(releases[i - 1]["published_at"].replace("Z", "+00:00"))
+                datetime.fromisoformat(releases[i - 1]["created_at"].replace("Z", "+00:00"))
                 if i > 0
                 else datetime(2000, 1, 1, tzinfo=timezone.utc)
             )
@@ -380,9 +380,9 @@ def main():
     else:
         latest = releases[-1]
         version = args.version or latest["tag_name"]
-        date = latest["published_at"][:10]
+        date = latest["created_at"][:10]
         since_date = (
-            datetime.fromisoformat(releases[-2]["published_at"].replace("Z", "+00:00"))
+            datetime.fromisoformat(releases[-2]["created_at"].replace("Z", "+00:00"))
             if len(releases) > 1
             else datetime(2000, 1, 1, tzinfo=timezone.utc)
         )
