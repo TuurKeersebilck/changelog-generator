@@ -28,7 +28,7 @@ TYPE_MAP = {
     "fix": "Bug Fixes",
     "perf": "Improvements",
     "refactor": "Improvements",
-    "docs": "Documentation",
+    "docs": None,
     "chore": None,
     "ci": None,
     "test": None,
@@ -36,13 +36,15 @@ TYPE_MAP = {
 }
 
 PROMPT_TEMPLATE = """You are writing a changelog for end users, not developers.
-Rewrite each of the following changes as a short, friendly bullet point.
+Rewrite the following changes as short, friendly bullet points.
 
 Rules:
-- Use plain English, no jargon (no "refactor", "PR", "merge", "commit", "chore", "deps")
+- Use plain English — no jargon, no technical terms like "refactor", "PR", "commit", "flag", "chore", "deps", "repo", "fallback"
+- Focus on the user benefit, not the implementation (e.g. "You can now run the script without setting up a token" not "Made token optional")
 - Start each bullet with a verb: "Added", "Fixed", "Improved", "You can now"
+- If multiple changes are about the same feature, combine them into one bullet
 - Keep each bullet to one sentence
-- Only output the bullet points, no headers, no extra text
+- Only output the bullet points, nothing else
 
 Changes:
 {changes}
