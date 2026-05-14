@@ -4,13 +4,15 @@ Changelog generator — fetches merged PRs since last release, rewrites them
 in user-friendly language via a local Ollama model, and outputs a changelog entry.
 
 Usage:
+    python generate.py                                         # auto-detects repo from current directory
     python generate.py --owner TuurKeersebilck --repo TimeManagement
-    python generate.py --owner TuurKeersebilck --repo TimeManagement --model gemma2:9b
-    python generate.py --owner TuurKeersebilck --repo TimeManagement --backfill
+    python generate.py --backfill
 """
 
 import argparse
 import os
+import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 
@@ -47,6 +49,25 @@ Changes:
 """
 
 SECTION_ORDER = ["New Features", "Bug Fixes", "Improvements", "Documentation"]
+
+
+def detect_owner_repo() -> tuple[str, str]:
+    try:
+        url = subprocess.check_output(
+            ["git", "remote", "get-url", "origin"], stderr=subprocess.DEVNULL
+        ).decode().strip()
+    except subprocess.CalledProcessError:
+        print("Error: not a git repository and --owner/--repo not specified.", file=sys.stderr)
+        sys.exit(1)
+
+    # SSH: git@github.com:owner/repo.git
+    # HTTPS: https://github.com/owner/repo.git
+    match = re.search(r"github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$", url)
+    if not match:
+        print(f"Error: could not parse GitHub owner/repo from remote URL: {url}", file=sys.stderr)
+        sys.exit(1)
+
+    return match.group(1), match.group(2)
 
 
 def github_headers(token: str | None) -> dict:
@@ -165,8 +186,8 @@ def prepend_to_changelog(entries: list[str], path: str):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate a user-friendly changelog via Ollama")
-    parser.add_argument("--owner", required=True)
-    parser.add_argument("--repo", required=True)
+    parser.add_argument("--owner", help="GitHub username or org (default: auto-detected from git remote)")
+    parser.add_argument("--repo", help="Repository name (default: auto-detected from git remote)")
     parser.add_argument("--model", default="qwen2.5:7b")
     parser.add_argument("--version", help="Version label (default: auto-detected from latest release tag)")
     parser.add_argument("--output", default="CHANGELOG.md")
@@ -178,7 +199,15 @@ def main():
     if not token:
         print("Warning: GITHUB_TOKEN not set — using unauthenticated API (60 req/hr limit).", file=sys.stderr)
 
-    releases = fetch_all_releases(args.owner, args.repo, token)
+    if not args.owner or not args.repo:
+        detected_owner, detected_repo = detect_owner_repo()
+        owner = args.owner or detected_owner
+        repo = args.repo or detected_repo
+        print(f"Auto-detected repo: {owner}/{repo}")
+    else:
+        owner, repo = args.owner, args.repo
+
+    releases = fetch_all_releases(owner, repo, token)
 
     if not releases:
         print("No releases found. Create a release on GitHub first.")
@@ -198,7 +227,7 @@ def main():
             until_date = datetime.fromisoformat(release["published_at"].replace("Z", "+00:00"))
 
             print(f"\n[{version}] {date}")
-            prs = fetch_merged_prs(args.owner, args.repo, since_date, until_date, token)
+            prs = fetch_merged_prs(owner, repo, since_date, until_date, token)
             print(f"  {len(prs)} merged PRs")
 
             if not prs:
@@ -234,8 +263,8 @@ def main():
             else datetime(2000, 1, 1, tzinfo=timezone.utc)
         )
 
-        print(f"Generating changelog for {version} ({date})")
-        prs = fetch_merged_prs(args.owner, args.repo, since_date, None, token)
+        print(f"Generating changelog for {owner}/{repo} — {version} ({date})")
+        prs = fetch_merged_prs(owner, repo, since_date, None, token)
         print(f"Found {len(prs)} merged PRs since previous release.")
 
         if not prs:
