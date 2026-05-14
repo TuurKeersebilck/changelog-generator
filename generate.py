@@ -120,7 +120,35 @@ def fetch_merged_prs(owner: str, repo: str, since: datetime, until: datetime | N
     return prs
 
 
-def classify_pr(title: str) -> tuple[str | None, str]:
+def fetch_commits(owner: str, repo: str, since: datetime, until: datetime | None, token: str | None) -> list[str]:
+    titles = []
+    page = 1
+    skip_patterns = ("merge pull request", "merge branch", "dependabot")
+    while True:
+        params = {"per_page": 100, "page": page}
+        if since.year > 2000:
+            params["since"] = since.isoformat()
+        if until:
+            params["until"] = until.isoformat()
+        r = requests.get(
+            f"{GITHUB_API}/repos/{owner}/{repo}/commits",
+            headers=github_headers(token),
+            params=params,
+        )
+        r.raise_for_status()
+        batch = r.json()
+        if not batch:
+            break
+        for commit in batch:
+            subject = commit["commit"]["message"].splitlines()[0].strip()
+            if any(subject.lower().startswith(p) for p in skip_patterns):
+                continue
+            titles.append(subject)
+        page += 1
+    return titles
+
+
+def classify_title(title: str) -> tuple[str | None, str]:
     lower = title.lower()
     for skip in SKIP_PREFIXES:
         if lower.startswith(skip):
@@ -132,14 +160,25 @@ def classify_pr(title: str) -> tuple[str | None, str]:
     return "Improvements", title
 
 
-def group_prs(prs: list[dict]) -> dict[str, list[str]]:
+def group_items(titles: list[str]) -> dict[str, list[str]]:
     groups: dict[str, list[str]] = {}
-    for pr in prs:
-        category, clean_title = classify_pr(pr["title"])
+    for title in titles:
+        category, clean_title = classify_title(title)
         if category is None:
             continue
         groups.setdefault(category, []).append(clean_title)
     return groups
+
+
+def fetch_and_group(owner: str, repo: str, since: datetime, until: datetime | None, token: str | None) -> tuple[dict[str, list[str]], str]:
+    """Returns (groups, source) where source is 'PRs' or 'commits'."""
+    prs = fetch_merged_prs(owner, repo, since, until, token)
+    if prs:
+        return group_items([pr["title"] for pr in prs]), "PRs"
+
+    print("No merged PRs found — falling back to commits...")
+    commits = fetch_commits(owner, repo, since, until, token)
+    return group_items(commits), "commits"
 
 
 def rewrite_with_ollama(titles: list[str], model: str) -> list[str]:
@@ -217,15 +256,12 @@ def main():
             sys.exit(1)
         version = args.version or "Unreleased"
         date = datetime.now().strftime("%Y-%m-%d")
-        print(f"Fetching PRs merged after {args.since_date}...")
-        prs = fetch_merged_prs(owner, repo, since_date, None, token)
-        print(f"Found {len(prs)} merged PRs.")
-        if not prs:
+        groups, source = fetch_and_group(owner, repo, since_date, None, token)
+        total = sum(len(v) for v in groups.values())
+        if not total:
             print("Nothing to changelog.")
             return
-        groups = group_prs(prs)
-        total = sum(len(v) for v in groups.values())
-        print(f"{total} entries to rewrite across {len(groups)} sections.")
+        print(f"{total} entries from {source} to rewrite across {len(groups)} sections.")
         entry = build_entry(groups, args.model, version, date)
         if args.print_only:
             print("\n" + entry)
@@ -239,14 +275,12 @@ def main():
         print("No releases found — generating changelog for all merged PRs...")
         version = args.version or "Unreleased"
         date = datetime.now().strftime("%Y-%m-%d")
-        prs = fetch_merged_prs(owner, repo, datetime(2000, 1, 1, tzinfo=timezone.utc), None, token)
-        print(f"Found {len(prs)} merged PRs.")
-        if not prs:
+        groups, source = fetch_and_group(owner, repo, datetime(2000, 1, 1, tzinfo=timezone.utc), None, token)
+        total = sum(len(v) for v in groups.values())
+        if not total:
             print("Nothing to changelog.")
             return
-        groups = group_prs(prs)
-        total = sum(len(v) for v in groups.values())
-        print(f"{total} entries to rewrite across {len(groups)} sections.")
+        print(f"{total} entries from {source} to rewrite across {len(groups)} sections.")
         entry = build_entry(groups, args.model, version, date)
         if args.print_only:
             print("\n" + entry)
@@ -268,14 +302,9 @@ def main():
             until_date = datetime.fromisoformat(release["published_at"].replace("Z", "+00:00"))
 
             print(f"\n[{version}] {date}")
-            prs = fetch_merged_prs(owner, repo, since_date, until_date, token)
-            print(f"  {len(prs)} merged PRs")
-
-            if not prs:
-                continue
-
-            groups = group_prs(prs)
+            groups, source = fetch_and_group(owner, repo, since_date, until_date, token)
             total = sum(len(v) for v in groups.values())
+            print(f"  {total} entries from {source}")
             if total == 0:
                 continue
 
@@ -305,16 +334,12 @@ def main():
         )
 
         print(f"Generating changelog for {owner}/{repo} — {version} ({date})")
-        prs = fetch_merged_prs(owner, repo, since_date, None, token)
-        print(f"Found {len(prs)} merged PRs since previous release.")
-
-        if not prs:
+        groups, source = fetch_and_group(owner, repo, since_date, None, token)
+        total = sum(len(v) for v in groups.values())
+        if not total:
             print("Nothing to changelog.")
             return
-
-        groups = group_prs(prs)
-        total = sum(len(v) for v in groups.values())
-        print(f"{total} entries to rewrite across {len(groups)} sections.")
+        print(f"{total} entries from {source} to rewrite across {len(groups)} sections.")
 
         entry = build_entry(groups, args.model, version, date)
 
