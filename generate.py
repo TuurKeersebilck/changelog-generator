@@ -235,6 +235,20 @@ def prepend_to_changelog(entries: list[str], path: str):
     header = "# Changelog\n\n"
     body = existing[len(header):] if existing.startswith(header) else existing
 
+    # Replace any existing sections whose version label matches an incoming entry
+    for entry in entries:
+        match = re.search(r'^## \[(.*?)\]', entry)
+        if not match:
+            continue
+        version = re.escape(match.group(1))
+        # Remove the existing section for this version (from its header to the next ## or end)
+        body = re.sub(
+            rf'## \[{version}\].*?(?=^## |\Z)',
+            '',
+            body,
+            flags=re.DOTALL | re.MULTILINE,
+        ).lstrip("\n")
+
     with open(path, "w") as f:
         f.write(header + "\n".join(entries) + "\n" + body)
 
