@@ -238,7 +238,7 @@ def parse_changelog(path: str) -> tuple[set[str], datetime | None]:
 def prepend_to_changelog(entries: list[str], path: str):
     existing = ""
     if os.path.exists(path):
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             existing = f.read()
 
     header = "# Changelog\n\n"
@@ -258,7 +258,7 @@ def prepend_to_changelog(entries: list[str], path: str):
             flags=re.DOTALL | re.MULTILINE,
         ).lstrip("\n")
 
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write(header + "\n".join(entries) + "\n" + body)
 
     print(f"Written to {path}")
