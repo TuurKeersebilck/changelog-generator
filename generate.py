@@ -104,7 +104,7 @@ def fetch_merged_prs(owner: str, repo: str, since: datetime, until: datetime | N
         r = requests.get(
             f"{GITHUB_API}/repos/{owner}/{repo}/pulls",
             headers=github_headers(token),
-            params={"state": "closed", "base": "main", "sort": "updated", "direction": "desc", "per_page": 100, "page": page},
+            params={"state": "closed", "base": "main", "sort": "created", "direction": "desc", "per_page": 100, "page": page},
         )
         r.raise_for_status()
         batch = r.json()
@@ -115,7 +115,7 @@ def fetch_merged_prs(owner: str, repo: str, since: datetime, until: datetime | N
                 continue
             merged_at = datetime.fromisoformat(pr["merged_at"].replace("Z", "+00:00"))
             if merged_at <= since:
-                return prs
+                continue
             if until is None or merged_at <= until:
                 prs.append(pr)
         page += 1
