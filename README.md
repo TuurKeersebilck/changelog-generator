@@ -31,7 +31,14 @@ Instead of parsing raw commit messages, it reads your merged PRs (which are alre
 ```bash
 git clone https://github.com/TuurKeersebilck/changelog-generator
 cd changelog-generator
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv
+
+# Mac/Linux
+source .venv/bin/activate
+
+# Windows
+.venv\Scripts\activate
+
 pip install -r requirements.txt
 ```
 
