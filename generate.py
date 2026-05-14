@@ -193,6 +193,7 @@ def main():
     parser.add_argument("--output", default="CHANGELOG.md")
     parser.add_argument("--print-only", action="store_true")
     parser.add_argument("--backfill", action="store_true", help="Generate entries for all historical releases")
+    parser.add_argument("--since-date", help="Fetch PRs merged after this date (YYYY-MM-DD), ignores releases")
     args = parser.parse_args()
 
     token = os.environ.get("GITHUB_TOKEN")
@@ -207,10 +208,50 @@ def main():
     else:
         owner, repo = args.owner, args.repo
 
+    # --since-date bypasses releases entirely
+    if args.since_date:
+        try:
+            since_date = datetime.strptime(args.since_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            print("Error: --since-date must be in YYYY-MM-DD format.", file=sys.stderr)
+            sys.exit(1)
+        version = args.version or "Unreleased"
+        date = datetime.now().strftime("%Y-%m-%d")
+        print(f"Fetching PRs merged after {args.since_date}...")
+        prs = fetch_merged_prs(owner, repo, since_date, None, token)
+        print(f"Found {len(prs)} merged PRs.")
+        if not prs:
+            print("Nothing to changelog.")
+            return
+        groups = group_prs(prs)
+        total = sum(len(v) for v in groups.values())
+        print(f"{total} entries to rewrite across {len(groups)} sections.")
+        entry = build_entry(groups, args.model, version, date)
+        if args.print_only:
+            print("\n" + entry)
+        else:
+            prepend_to_changelog([entry], args.output)
+        return
+
     releases = fetch_all_releases(owner, repo, token)
 
     if not releases:
-        print("No releases found. Create a release on GitHub first.")
+        print("No releases found — generating changelog for all merged PRs...")
+        version = args.version or "Unreleased"
+        date = datetime.now().strftime("%Y-%m-%d")
+        prs = fetch_merged_prs(owner, repo, datetime(2000, 1, 1, tzinfo=timezone.utc), None, token)
+        print(f"Found {len(prs)} merged PRs.")
+        if not prs:
+            print("Nothing to changelog.")
+            return
+        groups = group_prs(prs)
+        total = sum(len(v) for v in groups.values())
+        print(f"{total} entries to rewrite across {len(groups)} sections.")
+        entry = build_entry(groups, args.model, version, date)
+        if args.print_only:
+            print("\n" + entry)
+        else:
+            prepend_to_changelog([entry], args.output)
         return
 
     if args.backfill:
