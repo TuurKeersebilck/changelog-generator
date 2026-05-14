@@ -340,13 +340,13 @@ def main():
         entries = []
         for i, release in enumerate(releases):
             version = release["tag_name"]
-            date = release["published_at"][:10]
+            date = release["created_at"][:10]
             since_date = (
                 datetime.fromisoformat(releases[i - 1]["published_at"].replace("Z", "+00:00"))
                 if i > 0
                 else datetime(2000, 1, 1, tzinfo=timezone.utc)
             )
-            until_date = datetime.fromisoformat(release["published_at"].replace("Z", "+00:00"))
+            until_date = datetime.fromisoformat(release["created_at"].replace("Z", "+00:00"))
 
             if version in existing_versions:
                 print(f"\n[{version}] already in changelog — skipping")
