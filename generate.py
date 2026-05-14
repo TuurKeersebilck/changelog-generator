@@ -15,8 +15,12 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 import requests
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent / ".env")
 
 GITHUB_API = "https://api.github.com"
 OLLAMA_API = "http://localhost:11434/api/generate"
