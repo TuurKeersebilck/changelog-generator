@@ -197,7 +197,8 @@ def rewrite_with_ollama(titles: list[str], model: str) -> list[str]:
 
 
 def build_entry(groups: dict[str, list[str]], model: str, version: str, date: str) -> str:
-    lines = [f"## [{version}] - {date}\n"]
+    header = f"## [{version}]" if version == date else f"## [{version}] - {date}"
+    lines = [header + "\n"]
     for section in SECTION_ORDER:
         titles = groups.get(section)
         if not titles:
@@ -218,11 +219,19 @@ def parse_changelog(path: str) -> tuple[set[str], datetime | None]:
         return versions, None
     with open(path) as f:
         for line in f:
+            # ## [v1.0.0] - 2026-05-14
             match = re.search(r'^## \[(.*?)\] - (\d{4}-\d{2}-\d{2})', line)
             if match:
                 versions.add(match.group(1))
                 if last_date is None:
                     last_date = datetime.strptime(match.group(2), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                continue
+            # ## [2026-05-14]
+            match = re.search(r'^## \[(\d{4}-\d{2}-\d{2})\]', line)
+            if match:
+                versions.add(match.group(1))
+                if last_date is None:
+                    last_date = datetime.strptime(match.group(1), "%Y-%m-%d").replace(tzinfo=timezone.utc)
     return versions, last_date
 
 
@@ -286,8 +295,8 @@ def main():
         except ValueError:
             print("Error: --since-date must be in YYYY-MM-DD format.", file=sys.stderr)
             sys.exit(1)
-        version = args.version or "Unreleased"
         date = datetime.now().strftime("%Y-%m-%d")
+        version = args.version or date
         groups, source = fetch_and_group(owner, repo, since_date, None, token)
         total = sum(len(v) for v in groups.values())
         if not total:
@@ -310,8 +319,8 @@ def main():
             print(f"No releases found — fetching changes since last entry ({last_date.strftime('%Y-%m-%d')})...")
         else:
             print("No releases found — generating changelog for all commits...")
-        version = args.version or "Unreleased"
         date = datetime.now().strftime("%Y-%m-%d")
+        version = args.version or date
         groups, source = fetch_and_group(owner, repo, since, None, token)
         total = sum(len(v) for v in groups.values())
         if not total:
